@@ -94,9 +94,9 @@ def bot_answer(update, context):
     """Echo the user message."""
     question = update.message.text
     answer = go_bot(question)
-    print(question, answer)
-    print(stats)
-    print()
+    # print(question, answer)
+    # print(stats)
+    # print()
     update.message.reply_text(answer)
 
 
