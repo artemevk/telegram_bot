@@ -537,8 +537,12 @@ clf = LogisticRegression()
 # clf = LinearSVC()
 clf.fit(X, y)
 
-with open('dialogues.txt', encoding='utf-8') as f:
-    dialogues_data = f.read()
+from zipfile import ZipFile
+
+with ZipFile('dialogues.txt.zip') as file: #read zip
+    with file.open('dialogues.txt') as txt:
+        dialogues_data = txt.read().decode('utf-8')
+        
 dialogues = [dialogue.split('\n')[:2] for dialogue in dialogues_data.split('\n\n')]
 dialogues = [dialogue for dialogue in dialogues if len(dialogue) == 2]
 
@@ -554,6 +558,7 @@ for dialogue in dialogues:
         dialogues_filtered.append((question, answer))
 
 dialogues_filtered = list(set(dialogues_filtered))
+
 
 search_structure = {}  # {word: [(q, a), (q, a), ...], ...}
 
