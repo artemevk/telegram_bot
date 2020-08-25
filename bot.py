@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import random
 import nltk
 from sklearn.model_selection import train_test_split
