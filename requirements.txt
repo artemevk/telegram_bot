@@ -1,3 +1,4 @@
 nltk
 sklearn
+requests
 python-telegram-bot
