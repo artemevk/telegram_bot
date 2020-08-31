@@ -1,11 +1,16 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+# In[ ]:
+
+
+#!/usr/bin/env python3
 
 import random
 import nltk
 import pymorphy2
 import requests
+import logging
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction.text import CountVectorizer, HashingVectorizer, TfidfVectorizer
@@ -14,6 +19,14 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import classification_report
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from zipfile import ZipFile
+
+
+# ## Настройка логирования
+
+# In[ ]:
+
+
+logging.basicConfig(filename='app.log', format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 
 # In[ ]:
@@ -27,8 +40,11 @@ def get_intent(text):
 #     print(proba)
     index = list(probas).index(proba)
 #     print(index)
-#     print(clf.classes_[index])
-    if proba > 0.3:
+    intent = clf.classes_[index]
+
+    logging.info('Намерение: {}. Точность определения: {}'.format(intent, proba))
+
+    if proba > 0.25:
         index = list(probas).index(proba)
 #         print(index)
         return clf.classes_[index]
@@ -85,6 +101,8 @@ def get_generative_response(text):
                 return answer
 
 
+list_intents_rzhunemogu = ['joke', 'joke_18']            
+            
 def get_data_from_rzhunemogu(intent):
     if intent == 'joke':
         url = r'http://rzhunemogu.ru/RandJSON.aspx?CType=1'
@@ -95,22 +113,26 @@ def get_data_from_rzhunemogu(intent):
         res = requests.get(url)
         return res.text.split(':"')[1][:-2]
 
-list_intents_rzhunemogu = ['joke', 'joke_18']
-
 def get_response_by_intent(intent):
     if intent in list_intents_rzhunemogu:
-        return get_data_from_rzhunemogu(intent)
+        response = get_data_from_rzhunemogu(intent)
     else:
         phrases = BOT_CONFIG['intents'][intent]['responses']
-        return random.choice(phrases)
+        response = random.choice(phrases)
+    logging.info('Ответ BOT_CONFIG: {}'.format(response))
+    return response
 
-
-def get_phailure_phrase():
+def get_phailure_phrase():    
     phrases = BOT_CONFIG['failure_phrases']
-    return random.choice(phrases)
+    response = random.choice(phrases)
+    logging.info('Ответ заглушкой: {}'.format(response))
+    return response
 
 
 def go_bot(text):
+    
+    logging.info('Запрос: {}'.format(text))
+    
     """Генерация ответной реплики"""
     # NLU
     intent = get_intent(text)
@@ -119,17 +141,16 @@ def go_bot(text):
 
     # rules
     if intent:
-        stats['intent'] += 1
+        logging.info('Генерация подготовленного ответа')
         return get_response_by_intent(intent)
 
     # use generative model
     response = get_generative_response(text)
     if response:
-        stats['generative'] += 1
+        logging.info('Генерация ответа из диалогов: {}'.format(response))
         return response
 
     # stub
-    stats['stub'] += 1
     return get_phailure_phrase()
 
 
@@ -147,10 +168,6 @@ def bot_answer(update, context):
     """Echo the user message."""
     question = update.message.text
     answer = go_bot(question)
-    with open('logs.txt', 'w') as logs:
-        line = question+answer
-        logs.write(line)
-        logs.write(str(stats))
     update.message.reply_text(answer)
 
 
@@ -271,6 +288,7 @@ dialogues = [dialogue.split('\n')[:2] for dialogue in dialogues_data.split('\n\n
 dialogues = [dialogue for dialogue in dialogues if len(dialogue) == 2]
 
 dialogues_filtered = []
+alphabet = '1234567890- абвгдеёжзийклмнопрстуфхцчшщъыьэюяqwertyuiopasdfghjklzxcvbnm'
 
 for dialogue in dialogues:
     question = dialogue[0][2:].lower()
@@ -299,8 +317,6 @@ for word in search_structure:
 for word in to_del:
     search_structure.pop(word)
 
-stats = {'intent': 0, 'generative': 0, 'stub': 0}
-
 
 # In[ ]:
 
@@ -312,4 +328,10 @@ stats = {'intent': 0, 'generative': 0, 'stub': 0}
 
 
 main()
+
+
+# In[ ]:
+
+
+
 
