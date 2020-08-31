@@ -4,4 +4,3 @@ requests
 python-telegram-bot
 pymorphy2
 pymorphy2-dicts-ru
-string

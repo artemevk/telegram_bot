@@ -1,12 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
 
-
-#!/usr/bin/env python3
-
-# import string
 import random
 import nltk
 import pymorphy2
@@ -95,12 +90,12 @@ def get_data_from_rzhunemogu(intent):
         url = r'http://rzhunemogu.ru/RandJSON.aspx?CType=1'
         res = requests.get(url)
         return res.text.split(':"')[1][:-2]
-    elif intent == 'joke_18+':
+    elif intent == 'joke_18':
         url = r'http://rzhunemogu.ru/RandJSON.aspx?CType=11'
         res = requests.get(url)
         return res.text.split(':"')[1][:-2]
 
-list_intents_rzhunemogu = ['joke', 'joke_18+']
+list_intents_rzhunemogu = ['joke', 'joke_18']
 
 def get_response_by_intent(intent):
     if intent in list_intents_rzhunemogu:
@@ -276,7 +271,6 @@ dialogues = [dialogue.split('\n')[:2] for dialogue in dialogues_data.split('\n\n
 dialogues = [dialogue for dialogue in dialogues if len(dialogue) == 2]
 
 dialogues_filtered = []
-alphabet = '1234567890- абвгдеёжзийклмнопрстуфхцчшщъыьэюяqwertyuiopasdfghjklzxcvbnm'
 
 for dialogue in dialogues:
     question = dialogue[0][2:].lower()
