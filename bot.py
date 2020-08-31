@@ -1,34 +1,75 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[ ]:
+
+
 #!/usr/bin/env python3
 
+# import string
 import random
 import nltk
-from sklearn.model_selection import train_test_split
+import pymorphy2
+import requests
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.linear_model import LogisticRegression
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.svm import LinearSVC
+from sklearn.feature_extraction.text import CountVectorizer, HashingVectorizer, TfidfVectorizer
+from sklearn.svm import LinearSVC, SVC
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import classification_report
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from zipfile import ZipFile
 
 
+# In[ ]:
+
+
+# Рабочий вариант c CalibratedClassifierCV
 def get_intent(text):
     probas = clf.predict_proba(vectorizer.transform([text]))[0]
+#     print(len(probas))
     proba = max(probas)
+#     print(proba)
+    index = list(probas).index(proba)
+#     print(index)
+#     print(clf.classes_[index])
     if proba > 0.3:
         index = list(probas).index(proba)
+#         print(index)
         return clf.classes_[index]
-
-
-# probas = []
+    
+    
+    
+# # Рабочий вариант c LinearSVC
 # def get_intent(text):
-#     proba = clf.score(vectorizer.transform([text])[0], [text])
+#     probas = clf.decision_function(vectorizer.transform([text]))[0]
+#     print((probas))
+#     proba = max(probas)
+#     print('сумма:',sum(probas))
+#     print(proba)
+#     index = list(probas).index(proba)
+#     print(index)
+#     print(clf.classes_[index])
+#     print(clf.predict(vectorizer.transform([text]))[0])
+    
+#     if proba > -0.25:
+#         index = list(probas).index(proba)
+#         print(clf.classes_[index])
+#         return clf.classes_[index]
+
+
+# # Рабочий вариант с LogisticRegression
+# def get_intent(text):
+#     proba = clf.predict_proba(vectorizer.transform([text])[0], [text])
 #     probas.append(proba)
 #     print(proba, probas)
 #     proba = max(probas)
 #     if proba > 0.3:
 #         index = list(probas).index(proba)
 #         return clf.classes_[index]
-# #     intent = clf.predict(vectorizer.transform([text]))[0]
-# #     return intent
+
+
+# In[ ]:
 
 
 def get_generative_response(text):
@@ -49,9 +90,24 @@ def get_generative_response(text):
                 return answer
 
 
+def get_data_from_rzhunemogu(intent):
+    if intent == 'joke':
+        url = r'http://rzhunemogu.ru/RandJSON.aspx?CType=1'
+        res = requests.get(url)
+        return res.text.split(':"')[1][:-2]
+    elif intent == 'joke_18+':
+        url = r'http://rzhunemogu.ru/RandJSON.aspx?CType=11'
+        res = requests.get(url)
+        return res.text.split(':"')[1][:-2]
+
+list_intents_rzhunemogu = ['joke', 'joke_18+']
+
 def get_response_by_intent(intent):
-    phrases = BOT_CONFIG['intents'][intent]['responses']
-    return random.choice(phrases)
+    if intent in list_intents_rzhunemogu:
+        return get_data_from_rzhunemogu(intent)
+    else:
+        phrases = BOT_CONFIG['intents'][intent]['responses']
+        return random.choice(phrases)
 
 
 def get_phailure_phrase():
@@ -96,9 +152,10 @@ def bot_answer(update, context):
     """Echo the user message."""
     question = update.message.text
     answer = go_bot(question)
-    # print(question, answer)
-    # print(stats)
-    # print()
+    with open('logs.txt', 'w') as logs:
+        line = question+answer
+        logs.write(line)
+        logs.write(str(stats))
     update.message.reply_text(answer)
 
 
@@ -116,28 +173,101 @@ def main():
     updater.idle()
 
 
+
+# ### Подготовка данных для заготовленных ответов
+
+# In[ ]:
+
+
+# работаю с документом с заготовленными запросами-ответами
 with open('BOT_CONFIG.txt', encoding='utf-8') as conf:
     BOT_CONFIG = eval(conf.read())
 
 dataset = []
 
+# для приведения к нормальной форме всех запросов
+morph = pymorphy2.MorphAnalyzer()
+# для удаления знаков припинания
+alphabet = '1234567890- абвгдеёжзийклмнопрстуфхцчшщъыьэюяqwertyuiopasdfghjklzxcvbnm'
+# для исключения повторных запросов
+examples = []
+i = 0
+
 for intent, intent_data in BOT_CONFIG['intents'].items():
     for example in intent_data['examples']:
-        dataset.append([example, intent])
+        # пропускаю все запросы длинной меньше 4
+        if len(example) <= 3:
+            continue
+        example = example.lower() # приведение к нижнему регистру
+        example = morph.parse(example)[0].normal_form # приведение к нормальной форме
+        example = ''.join(char for char in example if char in alphabet) # удаление знаков препинания
+        if example not in examples:
+            examples.append(example)
+            dataset.append([example, intent])
+        else:
+            i += 1
+            
+print('Количество одинаковых запросов в конфигураторе бота:', i)            
+
+
+# ### Подготовка данных для обучения
+
+# In[ ]:
+
 
 X_text = [x for x, y in dataset]
 y = [y for x, y in dataset]
 
-vectorizer = CountVectorizer(analyzer='char', ngram_range=(3, 3))  # Как улучшить?
-X = vectorizer.fit_transform(X_text)
 
-clf = LogisticRegression()
-# vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(1, 5))
-# X = vectorizer.fit_transform(X_text)
+# ### Выбор модели обучения и качества обучения
 
-# clf = LinearSVC()
+# In[ ]:
+
+
+# вариант 1
+# vectorizer = CountVectorizer(analyzer='char', ngram_range=(3, 3))
+
+# вариант 2
+# vectorizer = HashingVectorizer(analyzer='char_wb', ngram_range=(2, 3))
+
+# вариант 3
+vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(2, 3))
+
+
+X = vectorizer.fit_transform(X_text) # обучение
+
+probas = []
+
+for i in range(5):
+#     clf = LinearSVC() # вариант 1
+    # вариант 2
+    svm = LinearSVC()
+    clf = CalibratedClassifierCV(svm, method='sigmoid')
+#     clf = LogisticRegression() # вариант 3
+#     clf = SVC(kernel='precomputed') # вариант 4
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33)
+    clf.fit(X_train, y_train)
+    proba = clf.score(X_test, y_test)
+    probas.append(proba)
+    print('.', end = '')
+
+print('\nКачество модели: {:.2%}'.format(sum(probas) / len(probas)))
+
+
+# ### Окончательное обучение
+
+# In[ ]:
+
+
 clf.fit(X, y)
 
+
+# ### Подготовка данных из библиотеки диалогов
+
+# In[ ]:
+
+
+# читаем все диалоги из архива
 with ZipFile('dialogues.zip') as file:  # read zip
     with file.open('dialogues.txt') as txt:
         dialogues_data = txt.read().decode('utf-8')
@@ -177,4 +307,15 @@ for word in to_del:
 
 stats = {'intent': 0, 'generative': 0, 'stub': 0}
 
+
+# In[ ]:
+
+
+# go_bot('расскажи пошлый анекдот')
+
+
+# In[ ]:
+
+
 main()
+
